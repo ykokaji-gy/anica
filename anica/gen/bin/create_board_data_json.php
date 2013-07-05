@@ -1,4 +1,5 @@
 <?php
+require_once '/home/ykokaji/git/anica/gen/lib/common.inc';
 // jsonにする
 
 $a = array(
@@ -7,10 +8,10 @@ $a = array(
     );
 
 $a = json_encode($a);
-$fp = fopen('gen/data/board/buzz.json', 'w');
+$fp = fopen(BUZZ_2CH_BOARD_URL_JSON_PATH, 'w');
 fwrite($fp, $a);
 fclose($fp);
-$json = file_get_contents('gen/data/board/buzz.json',true);
+$json = file_get_contents(BUZZ_2CH_BOARD_URL_JSON_PATH,true);
 var_dump(json_decode($json));
 
 $b = array(
@@ -26,10 +27,10 @@ $b = array(
     );
 
 $b = json_encode($b);
-$fp = fopen('gen/data/board/jk.json', 'w');
+$fp = fopen(JK_2CH_BOARD_URL_JSON_PATH, 'w');
 fwrite($fp, $b);
 fclose($fp);
-$json = file_get_contents('gen/data/board/jk.json',true);
+$json = file_get_contents(JK_2CH_BOARD_URL_JSON_PATH,true);
 var_dump(json_decode($json));
 
 ?>

@@ -9,12 +9,20 @@ require_once 'common.inc';
 
 // test
 $obj2ch = new C2ch();
-$boardtype = "buzz";
-$boardList = array('anime', 'anime2');
-//var_dump($obj2ch->get2chBoardUrl($boardtype));
-var_dump($obj2ch->get2chThreadUrl($boardType, $boardIdList));
-//var_dump($obj2ch->get2chThreadContents($boardList));
-
+$boardType = "buzz";
+$boardIdList = array('anime', 'anime2');
+//$boardIdList = array('livenhk', 'liveetv', 'liventv', 'livetbs', 'livecx');
+$animeList = array(
+    '俺の妹がこんなに可愛いわけがない。',
+    'ローゼンメイデン',
+    'とある科学の超電磁砲S',
+    'Free！',
+    'ダンガンロンパ',
+    );
+//var_dump($obj2ch->get2chBoardUrl($boardType));
+//var_dump($obj2ch->get2chThreadList($boardType, $boardIdList));
+//var_dump($obj2ch->get2chThreadContents($boardIdList));
+var_dump($obj2ch->buzzCount('5', '2013/07/05 20:47:20'));
 
 class C2ch
 {
@@ -76,9 +84,16 @@ class C2ch
 
         // バズ or 実況
         if ($boardType == 'buzz') {
-            $jsonPath = BUZZ_2CH_URL_JSON_PATH;
+            $jsonPath = BUZZ_2CH_BOARD_URL_JSON_PATH;
         } else if ($boardType == 'jk') {
-            $jsonPath = JK_2CH_URL_JSON_PATH;
+            $jsonPath = JK_2CH_BOARD_URL_JSON_PATH;
+        }
+
+        // ファイル存在チェック
+        if (!file_exists($jsonPath)) {
+            if (!touch($jsonPath)) {
+                // file touch error
+            }
         }
 
         // 既存の板(json)との整合性確認
@@ -101,7 +116,6 @@ class C2ch
                         // URLが変わっていた場合
                         $boardUrl = $url;
                     }
-                    var_dump($boardID);
                     $updateBoardList[$boardID] = $boardUrl;
                     break;
                 } else {
@@ -125,9 +139,9 @@ class C2ch
     }
 
     /**
-     * get2chThreadUrl
+     * get2chThreadList
      *
-     * 2chのアニメbuzz系、実況系スレッドのURLを取得してデータ保存する
+     * 2chのアニメbuzz系、実況系スレッドの情報を取得してデータ保存する
      *
      * @access public
      * @param  string $boardType          buzz系 or 実況系
@@ -135,11 +149,77 @@ class C2ch
      * @return bool   true or false
      *
      */
-    public function get2chThreadUrl($boardType, $boardIdList = array())
+    public function get2chThreadList($boardType, $boardIdList = array())
     {
-        if ($boardType ) {
+
+        if ($boardType == 'buzz') {
+            $jsonPath = BUZZ_2CH_BOARD_URL_JSON_PATH;
+        } else if ($boardType == 'jk') {
+            $jsonPath = JK_2CH_BOARD_URL_JSON_PATH;
         }
-        return "hoge";
+
+        $json = file_get_contents($jsonPath, 'true');
+        $json = json_decode($json);
+        // 板ごとに回す
+        foreach ($boardIdList as $boardId) {
+            // 板のスレッド一覧
+            $subjectUrl = $json->{$boardId} . 'subject.txt';
+            $threadList = fopen($subjectUrl, 'r');
+
+            if ($threadList) {
+                $i = 0;
+                $threadDataList = array();
+
+                // スレッド一覧をあるだけ回す
+                while (!feof($threadList)) {
+                    $i++;
+                    // 1行ずつ読む
+                    $threadLine = fgets($threadList);
+                    // UTF-8変換
+                    $threadLine = mb_convert_encoding($threadLine, 'utf8', 'sjis-win');
+
+                    // スレIDの取得
+                    $threadIdNum = mb_strpos($threadLine, '.dat<>');
+                    $threadId    = mb_substr($threadLine, 0, $threadIdNum);
+
+                    // レス数の取得
+                    $last  = mb_strrpos($threadLine, ')') - 1;        // 最後に)の出る場所
+                    $first = mb_strrpos($threadLine, ' (') + 1;       // 最後に(の出る場所
+                    $n     = $last - $first;
+                    $num   = mb_substr($threadLine, $first + 1, $n);
+
+                    // スレ名取得
+                    $name       = $first - 7 - $threadIdNum;                       // 7は「.dat<>」の文字数
+                    $threadName = mb_substr($threadLine, $threadIdNum + 6, $name); // 6は「.dat<>」の文字数
+
+                    // jsonに保存するデータ
+                    $threadDataList[$i] = array(
+                        'threadId'   => $threadId,
+                        'threadName' => $threadName,
+                        'num'        => $num
+                        );
+
+                }
+
+                // 板ごとにjsonに書き込み
+                $threadDataJsonPath = GEN_DATA_THREAD_DIR . $boardId . '.json';
+                // ファイル存在チェック
+                if (!file_exists($threadDataJsonPath)) {
+                    if (!touch($threadDataJsonPath)) {
+                        // file touch error
+                    }
+                }
+                $threadDataList = json_encode($threadDataList);
+                $fp = fopen($threadDataJsonPath, 'w');
+                fwrite($fp, $threadDataList);
+                fclose($fp);
+
+            } else {
+                // fopen error
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -154,6 +234,7 @@ class C2ch
      */
     public function get2chThreadContents($boardList)
     {
+        
         return "hoge";
     }
 
@@ -170,6 +251,39 @@ class C2ch
     public function get2chThreadIkioi($boardtype)
     {
         return "hoge";
+    }
+
+    /**
+     * buzzCount
+     *
+     * 2chの勢いを計算
+     *
+     * @access public
+     * @param  string $num       スレッドのレス数
+     * @param  string $touchTime スレッドの立った時間（YYYY/MM/dd hh:mm:ss）
+     * @return string $count  勢い数
+     */
+    public function buzzCount($num, $touchTime)
+    {
+        // スレたった時間
+        $touchTime = date('U', strtotime($touchTime));
+        // 今の時間
+        $now = date('U');
+        // スレがたってからの経過時間
+        $time = (int)$now - (int)$touchTime;
+        // 勢い計算
+        $num = 40;
+        $time = 4000;
+        $count = (int)$num * 86400 / (int)$time;
+
+        // 書き込み数5未満→勢最大勢い10　書き込み数10未満→勢最大勢い100に調整
+        if ($num < 5 && $count >= 10) {
+            $count = 10;
+        } else if ($num < 10 && $count >= 100) {
+            $count = 100;
+        }
+
+        return $count;
     }
 
 }
