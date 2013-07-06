@@ -21,6 +21,8 @@ define('GEN_DATA_DIR', GEN_DIR . 'data/');
 define('GEN_DATA_BOARD_DIR', GEN_DATA_DIR . 'board/');
 // gen data スレ情報格納ディレクトリ
 define('GEN_DATA_THREAD_DIR', GEN_DATA_DIR . 'thread/');
+// datファイル格納ディレクトリ
+define('GEN_DATA_DAT_DIR', GEN_DATA_DIR . 'dat/');
 
 
 // 板 buzz系 json
@@ -28,7 +30,7 @@ define('BUZZ_2CH_BOARD_URL_JSON_PATH', GEN_DATA_BOARD_DIR . 'buzz.json');
 // 板 実況系 json
 define('JK_2CH_BOARD_URL_JSON_PATH',   GEN_DATA_BOARD_DIR . 'jk.json');
 
-
+// 共通ログディレクトリ
 
 
 ?>

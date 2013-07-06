@@ -12,17 +12,27 @@ $obj2ch = new C2ch();
 $boardType = "buzz";
 $boardIdList = array('anime', 'anime2');
 //$boardIdList = array('livenhk', 'liveetv', 'liventv', 'livetbs', 'livecx');
-$animeList = array(
-    '俺の妹がこんなに可愛いわけがない。',
-    'ローゼンメイデン',
-    'とある科学の超電磁砲S',
-    'Free！',
-    'ダンガンロンパ',
+$animeNameList = array(
+    'a:001' => array('俺の妹がこんなに可愛いわけがない。', '俺妹', 'tbs'),
+    'a:002' => array('ローゼンメイデン', 'ローゼン'),
+    'a:003' => array('とある科学の超電磁砲S', 'レールガン', 'とある'),
+    'a:004' => array('Free！'),
+    'a:005' => array('ダンガンロンパ'),
     );
 //var_dump($obj2ch->get2chBoardUrl($boardType));
 //var_dump($obj2ch->get2chThreadList($boardType, $boardIdList));
-//var_dump($obj2ch->get2chThreadContents($boardIdList));
-var_dump($obj2ch->buzzCount('5', '2013/07/05 20:47:20'));
+
+//var_dump($obj2ch->get2chThreadContents($boardIdList, $animeNameList));
+$touchTime = date('U', strtotime('2013/07/05 20:47:20'));
+//var_dump($obj2ch->buzzCount('5', $touchTime));
+var_dump($obj2ch->curlRequest2ch());
+
+
+#============================================
+// 2chスレッド一覧json格納
+//var_dump($obj2ch->get2chThreadList($boardType, $boardIdList));
+
+
 
 class C2ch
 {
@@ -42,7 +52,7 @@ class C2ch
 
 
     /**
-     * get2chBoardUrl
+     * get2chBoardUredList->{'threadName'}
      *
      * 2chのアニメbuzz系、実況系板のURLを取得してデータ保存する
      *
@@ -182,6 +192,9 @@ class C2ch
                     $threadIdNum = mb_strpos($threadLine, '.dat<>');
                     $threadId    = mb_substr($threadLine, 0, $threadIdNum);
 
+                    // スレURL生成
+                    $threadDatUrl = $json->{$boardId} . 'dat/' . $threadId . '.dat';
+
                     // レス数の取得
                     $last  = mb_strrpos($threadLine, ')') - 1;        // 最後に)の出る場所
                     $first = mb_strrpos($threadLine, ' (') + 1;       // 最後に(の出る場所
@@ -194,9 +207,10 @@ class C2ch
 
                     // jsonに保存するデータ
                     $threadDataList[$i] = array(
-                        'threadId'   => $threadId,
-                        'threadName' => $threadName,
-                        'num'        => $num
+                        'threadId'      => $threadId,
+                        'threadDatUrl'  => $threadDatUrl,
+                        'threadName'    => $threadName,
+                        'num'           => $num
                         );
 
                 }
@@ -225,33 +239,61 @@ class C2ch
     /**
      * get2chThreadContents
      *
-     * 2chのアニメ実況系スレッドの内容を取得、データ生成
+     * 2chのアニメbuzz系・実況系スレッドの内容を取得、勢いからデータ生成
      *
      * @access public
-     * @param  string $boardList        実況板のID
+     * @param  array  $boardIdList        板のID
+     * @param  array  $animeNameList      アニメ名や略称などのリスト（anime idがサブキー）
+     * @param  int    $borderLineNum      勢いのある板の境界値
      * @return bool   true or false
      *
      */
-    public function get2chThreadContents($boardList)
+    public function get2chThreadContents($boardIdList, $animeNameList, $borderLineNum=100)
     {
-        
+        mb_regex_encoding("UTF-8");
+        $animeThreadList = array();
+        foreach ($boardIdList as $boardId) {
+            // 板ごとにjson読み込み
+            $threadDataJsonPath = GEN_DATA_THREAD_DIR . $boardId . '.json';
+            // ファイル存在チェック
+            if (!file_exists($threadDataJsonPath)) {
+                // not file exists
+                break;
+            }
+            $threadJson = file_get_contents($threadDataJsonPath, true);
+            $threadJson = json_decode($threadJson);
+            // スレッド名に検索対象アニメ名・略称があるかcheck
+            foreach ($threadJson as $threadList) {
+                foreach ($animeNameList as $animeId => $animeWordList) {
+                    foreach ($animeWordList as $animeWord) {
+                        // スレ絞り込み
+                        if (mb_eregi($animeWord, $threadList->{'threadName'})) {
+                            $animeThreadList[$animeId][] = array(
+                                'threadDatUrl' => $threadList->{'threadDatUrl'},
+                                'num'          => $threadList->{'num'}
+                            );
+                            // 同じ作品でスレが重複しないようにbreak
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // アニメ毎にスレッドのdatURLからスレが立った時間取得
+
+        // 時間とレス数から勢い取得
+
+        // 勢いからスレを選別
+
+        // buzz or 実況用データ生成
+
+        //foreach () {
+        //}
+        exit();
         return "hoge";
     }
 
-    /**
-     * 
-     *
-     * 2chのアニメbuzz系、実況系スレッドの勢いを取得
-     *
-     * @access public
-     * @param  string $boardtype        buzz系 or 実況系
-     * @return array  $ikioiList        アニメ毎の勢い
-     *
-     */
-    public function get2chThreadIkioi($boardtype)
-    {
-        return "hoge";
-    }
 
     /**
      * buzzCount
@@ -260,13 +302,11 @@ class C2ch
      *
      * @access public
      * @param  string $num       スレッドのレス数
-     * @param  string $touchTime スレッドの立った時間（YYYY/MM/dd hh:mm:ss）
+     * @param  int    $touchTime スレッドの立った時間（エポック時間からの通算秒数）
      * @return string $count  勢い数
      */
     public function buzzCount($num, $touchTime)
     {
-        // スレたった時間
-        $touchTime = date('U', strtotime($touchTime));
         // 今の時間
         $now = date('U');
         // スレがたってからの経過時間
@@ -284,6 +324,105 @@ class C2ch
         }
 
         return $count;
+    }
+
+
+    /**
+     * curlRequest2chDat
+     *
+     * 2chDatファイル専用のcurlリクエスト用
+     *
+     * @access public
+     * @param  string $datUrl             datファイルのURL
+     * @return array  $threadContentLsit  スレ内容と新規取得か差分取得かのフラグ
+     */
+    public function curlRequest2ch($datUrl='http://ikura.2ch.net/gamefight/dat/1371888771.dat')
+    {
+        // datのファイル名
+        preg_match('/\d{1,}.dat$/', $datUrl, $datNameList);
+        // datの格納場所
+        $logFilePath = GEN_DATA_DAT_DIR . $datNameList[0];
+
+        $data = '';
+        $flag = '0';
+        $ch = curl_init();
+
+        // dat取得用header生成
+        $header[] = 'User-Agent: Monazilla/1.00 gyao.yahoo.co.jp';
+        if(file_exists($logFilePath)){
+            $time = filemtime($logFilePath);
+            $mod = date("r", $time - 3600 * 9);
+            $byte = filesize($logFilePath);
+            $header[] = 'If-Modified-Since: '.$mod;
+            $header[] = 'Range: bytes='.$byte.'-';
+        } else {
+            curl_setopt($ch, CURLOPT_ENCODING, 'gzip');
+            $flag = 'new';
+        }
+        $header[] = 'Connection: close';
+
+        // curlいろいろ
+        curl_setopt($ch, CURLOPT_URL, $datUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_FILETIME, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $header);
+        curl_setopt($ch, CURLOPT_FILETIME, 1);
+        //curl_setopt($ch, CURLOPT_HEADER, 1);
+        // dat取得
+        $data = curl_exec($ch);
+        //$data = mb_convert_encoding($data, 'utf8', 'sjis-win');
+        // httpcode取得
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        // Last-Modified取得
+        $mod  = curl_getinfo($ch, CURLINFO_FILETIME);
+        // Last-Modifiedをタイムスタンプに変換
+        $t = strtotime($mod);
+        if($t !== FALSE){
+            $mod = $t;
+        }
+        if ($data != '' && $flag != 'new') {
+            $flag = 'update';
+        }
+
+        // とりあえずerrorを取得
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        // datファイルをそのまま保存（差分取得用
+        $fp = fopen($logFilePath, 'a');
+        fwrite($fp, $data);
+        fclose($fp);
+
+
+
+
+        // スレッドの立った時間を取得
+        $fp = fopen($logFilePath, 'r');
+        while (!feof($fp)) {
+            // 1行ごとに正規表現使って分解
+            $ikioiLine = fgets($fp);
+            $ikioiLine = mb_convert_encoding($ikioiLine, 'utf8', 'sjis-win');
+            $LineList = explode('<>', $ikioiLine);
+            $date = mb_substr($LineList[2], 0, 10);
+            $time = mb_substr($LineList[2], 16, 8);
+            $touchTime = date('U', strtotime($date . ' ' . $time));
+            if ($touchTime !== FALSE || $touchTime != 0) {
+                break;
+            } else {
+                // もし時間が不正な場合は初期化
+                $touchTime = 0;
+            }
+        }
+        fclose($fp);
+
+        $threadContentLsit = array(
+            'threadContents' => mb_convert_encoding($data, 'utf8', 'sjis-win'),
+            'updateFlag' => $flag,
+            'touchTime' => $touchTime);
+
+        return $threadContentLsit;
+
     }
 
 }
