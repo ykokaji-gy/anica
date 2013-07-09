@@ -21,16 +21,7 @@ $animeNameList = array(
     );
 //var_dump($obj2ch->get2chBoardUrl($boardType));
 //var_dump($obj2ch->get2chThreadList($boardType, $boardIdList));
-
 //var_dump($obj2ch->get2chThreadContents($boardIdList, $animeNameList));
-$touchTime = date('U', strtotime('2013/07/05 20:47:20'));
-//var_dump($obj2ch->buzzCount('5', $touchTime));
-var_dump($obj2ch->curlRequest2ch());
-
-
-#============================================
-// 2chスレッド一覧json格納
-//var_dump($obj2ch->get2chThreadList($boardType, $boardIdList));
 
 
 
@@ -248,10 +239,12 @@ class C2ch
      * @return bool   true or false
      *
      */
-    public function get2chThreadContents($boardIdList, $animeNameList, $borderLineNum=100)
+    public function get2chThreadContents($boardIdList, $animeNameList, $borderLineNum=0)
     {
         mb_regex_encoding("UTF-8");
         $animeThreadList = array();
+
+        // アニメ作品スレッド抽出
         foreach ($boardIdList as $boardId) {
             // 板ごとにjson読み込み
             $threadDataJsonPath = GEN_DATA_THREAD_DIR . $boardId . '.json';
@@ -269,6 +262,7 @@ class C2ch
                         // スレ絞り込み
                         if (mb_eregi($animeWord, $threadList->{'threadName'})) {
                             $animeThreadList[$animeId][] = array(
+                                'threadName'   => $threadList->{'threadName'},
                                 'threadDatUrl' => $threadList->{'threadDatUrl'},
                                 'num'          => $threadList->{'num'}
                             );
@@ -280,18 +274,31 @@ class C2ch
             }
         }
 
+        $threadContentLsit = array();
         // アニメ毎にスレッドのdatURLからスレが立った時間取得
+        foreach ($animeThreadList as $animeID => $animeThreadInfoList) {
+            foreach ($animeThreadInfoList as $key => $animeThreadInfo) {
+                $tmp = $this->curlRequest2ch($animeThreadInfo['threadDatUrl']);
 
-        // 時間とレス数から勢い取得
+                // 過去ログに落ちてるのは除外
+                if ($tmp['touchTime'] != 0) {
+                    // 時間とレス数から勢い取得
+                    $tmp['ikioi'] = $this->buzzCount($animeThreadInfo['num'], $tmp['touchTime']);
+                    //$threadContentLsit[$animeID][$key] = $tmp;
+                    $tmp['animeID'] = $animeID;
+                    $tmp['num'] = $animeThreadInfo['num'];
+                    $threadContentLsit[] = $tmp;
+                }
+            }
+        }
 
-        // 勢いからスレを選別
+        // 勢い順にソート
+        foreach ($threadContentLsit as $key => $threadContent) {
+            $key_id[$key] = $threadContent['ikioi'];
+        }
+        array_multisort($key_id, SORT_DESC, $threadContentLsit);
 
-        // buzz or 実況用データ生成
-
-        //foreach () {
-        //}
-        exit();
-        return "hoge";
+        return $threadContentLsit;
     }
 
 
@@ -312,8 +319,6 @@ class C2ch
         // スレがたってからの経過時間
         $time = (int)$now - (int)$touchTime;
         // 勢い計算
-        $num = 40;
-        $time = 4000;
         $count = (int)$num * 86400 / (int)$time;
 
         // 書き込み数5未満→勢最大勢い10　書き込み数10未満→勢最大勢い100に調整
@@ -336,7 +341,7 @@ class C2ch
      * @param  string $datUrl             datファイルのURL
      * @return array  $threadContentLsit  スレ内容と新規取得か差分取得かのフラグ
      */
-    public function curlRequest2ch($datUrl='http://ikura.2ch.net/gamefight/dat/1371888771.dat')
+    public function curlRequest2ch($datUrl)
     {
         // datのファイル名
         preg_match('/\d{1,}.dat$/', $datUrl, $datNameList);
@@ -390,23 +395,28 @@ class C2ch
         curl_close($ch);
 
         // datファイルをそのまま保存（差分取得用
-        $fp = fopen($logFilePath, 'a');
-        fwrite($fp, $data);
-        fclose($fp);
-
-
-
+        if ($flag != "0") {
+            $fp = fopen($logFilePath, 'a');
+            fwrite($fp, $data);
+            fclose($fp);
+        }
 
         // スレッドの立った時間を取得
         $fp = fopen($logFilePath, 'r');
         while (!feof($fp)) {
+            $touchTime = 0;
+            $threadName = '';
             // 1行ごとに正規表現使って分解
             $ikioiLine = fgets($fp);
             $ikioiLine = mb_convert_encoding($ikioiLine, 'utf8', 'sjis-win');
             $LineList = explode('<>', $ikioiLine);
+            if (empty($LineList[2])) {
+                continue;
+            }
             $date = mb_substr($LineList[2], 0, 10);
             $time = mb_substr($LineList[2], 16, 8);
             $touchTime = date('U', strtotime($date . ' ' . $time));
+            $threadName = $LineList[4];
             if ($touchTime !== FALSE || $touchTime != 0) {
                 break;
             } else {
@@ -416,10 +426,19 @@ class C2ch
         }
         fclose($fp);
 
+        // スレッドURL
+        $datUrlParse = explode('/', $datUrl);
+        $threadId = explode('.', $datUrlParse[5]);
+        $threadUrl = 'http://' . $datUrlParse[2] . '/test/read.cgi/' . $datUrlParse[3] . '/' . $threadId[0] . '/';
+
+
+        // スレッド名、スレッドレス内容、更新フラグ、スレッドの立った時間
         $threadContentLsit = array(
-            'threadContents' => mb_convert_encoding($data, 'utf8', 'sjis-win'),
-            'updateFlag' => $flag,
-            'touchTime' => $touchTime);
+                'threadName' => trim($threadName),
+                'threadContents' => mb_convert_encoding($data, 'utf8', 'sjis-win'),
+                'updateFlag' => $flag,
+                'touchTime' => $touchTime,
+                'threadUrl' => $threadUrl,);
 
         return $threadContentLsit;
 
